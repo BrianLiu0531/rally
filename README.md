@@ -4,7 +4,7 @@
 
 A real-time two-player game over WebSockets, built from scratch to show the netcode behind multiplayer games. The server runs the only simulation. Each browser predicts its own paddle so input feels instant, and draws everything else slightly in the past so motion stays smooth. A player can lose their connection mid-match and carry on.
 
-**Live demo:** _https://rally.onrender.com_ (free instance: the first visit after idling takes about a minute). Play the built-in bot, quick-match a stranger, or share a private room code.
+**Live demo:** https://rally-6flz.onrender.com (free instance: the first visit after idling takes about a minute). Play the built-in bot, quick-match a stranger, or share a private room code.
 
 **Stack:** TypeScript · Node.js · `ws` (no game framework) · Canvas · Vite · Vitest · Prometheus · Docker · GitHub Actions
 
