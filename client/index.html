@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rally</title>
+    <meta name="description" content="Real-time multiplayer game with a server-authoritative simulation, client-side prediction and reconnection." />
+  </head>
+  <body>
+    <main>
+      <section id="lobby" class="card">
+        <h1>Rally</h1>
+        <p class="lead">
+          A real-time two-player game over WebSockets. The server runs the only simulation; your browser predicts your own paddle so
+          it feels instant, and you can drop your connection mid-match and carry on.
+        </p>
+        <label class="field">
+          <span>Your name</span>
+          <input id="name" maxlength="16" placeholder="Player" autocomplete="nickname" />
+        </label>
+        <div class="row">
+          <button id="quick">Quick match</button>
+          <button id="bot" class="secondary">Play the bot</button>
+          <button id="create" class="secondary">Private room</button>
+        </div>
+        <form id="joinform" class="row">
+          <input id="code" maxlength="4" placeholder="CODE" aria-label="Room code" autocapitalize="characters" />
+          <button class="secondary">Join</button>
+        </form>
+        <p id="status" class="status" aria-live="polite"></p>
+        <button id="cancel" class="link" hidden>Cancel</button>
+        <p id="online" class="muted small"></p>
+        <p class="muted small">Controls: <kbd>W</kbd>/<kbd>S</kbd> or <kbd>↑</kbd>/<kbd>↓</kbd>, or drag on touch screens. First to 5.</p>
+      </section>
+
+      <section id="game" hidden>
+        <div class="row between">
+          <span id="names" class="muted"></span>
+          <span id="conn" class="warn"></span>
+        </div>
+        <div class="stage">
+          <canvas id="field" width="800" height="500" aria-label="Game field"></canvas>
+          <div id="overlay" class="overlay" aria-live="polite"></div>
+        </div>
+        <div class="row">
+          <button id="rematch" hidden>Rematch</button>
+          <button id="leave" class="secondary">Leave</button>
+        </div>
+        <details class="netpanel" open>
+          <summary>Netcode</summary>
+          <p id="netstats" class="mono small"></p>
+          <div class="row">
+            <label><input type="checkbox" id="predict" checked /> Client-side prediction</label>
+            <label>
+              Extra latency
+              <select id="lag">
+                <option value="0">none</option>
+                <option value="100">100 ms</option>
+                <option value="250">250 ms</option>
+              </select>
+            </label>
+            <button id="drop" class="secondary small">Drop connection</button>
+          </div>
+          <p class="muted small">
+            Add latency, then turn prediction off: your paddle starts lagging behind your keys. Drop the connection and the match
+            pauses until you are back.
+          </p>
+        </details>
+      </section>
+      <footer class="muted small">
+        TypeScript · Node.js · ws · Canvas · <a href="https://github.com/BrianLiu0531/rally">source on GitHub</a>
+      </footer>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

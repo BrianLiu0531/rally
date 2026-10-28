@@ -1,0 +1,9 @@
+# Render Blueprint: Dashboard → New → Blueprint → pick this repo. WebSockets work on the free plan.
+# Free instances sleep after 15 minutes idle; the first visit then takes about a minute.
+services:
+  - type: web
+    name: rally
+    runtime: docker
+    plan: free
+    region: singapore
+    healthCheckPath: /healthz

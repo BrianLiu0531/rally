@@ -1,0 +1,32 @@
+{
+  "name": "rally",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "workspaces": [
+    "shared",
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w server & npm run dev -w client",
+    "build": "npm run build -w client && npm run build -w server",
+    "start": "node server/dist/server.js",
+    "test": "vitest run",
+    "typecheck": "tsc -p shared && tsc -p server && tsc -p client",
+    "loadtest": "tsx scripts/loadtest.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
+    "esbuild": "^0.25.0",
+    "tsx": "^4.19.2",
+    "typescript": "~5.8.3",
+    "vite": "^6.0.7",
+    "vitest": "^3.2.4"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.2": true
+  }
+}
