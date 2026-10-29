@@ -113,6 +113,7 @@ describe('protocol', () => {
     ['bad code', '{"t":"join","code":"ABCDE"}'],
     ['old protocol', '{"t":"hello","v":0,"name":"x"}'],
     ['bad token', '{"t":"hello","v":1,"name":"x","token":"../.."}'],
+    ['bad player key', '{"t":"hello","v":1,"name":"x","key":"short"}'],
     ['oversized', JSON.stringify({ t: 'ping', c: 1, pad: 'x'.repeat(600) })],
   ])('rejects %s', (_name, raw) => {
     expect(parseClientMessage(raw)).toBeNull();

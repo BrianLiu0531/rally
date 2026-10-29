@@ -29,8 +29,35 @@
         </form>
         <p id="status" class="status" aria-live="polite"></p>
         <button id="cancel" class="link" hidden>Cancel</button>
+        <p id="me" class="small"></p>
         <p id="online" class="muted small"></p>
         <p class="muted small">Controls: <kbd>W</kbd>/<kbd>S</kbd> or <kbd>↑</kbd>/<kbd>↓</kbd>, or drag on touch screens. First to 5.</p>
+      </section>
+
+      <section id="board" class="card">
+        <div class="board">
+          <div>
+            <h2>Leaderboard</h2>
+            <table>
+              <thead><tr><th>#</th><th>Player</th><th class="num">Rating</th><th class="num">W–L</th></tr></thead>
+              <tbody id="ranks"></tbody>
+            </table>
+          </div>
+          <div>
+            <h2>Recent matches</h2>
+            <ul id="recent" class="recent"></ul>
+          </div>
+        </div>
+        <details class="small">
+          <summary>How ranking works</summary>
+          <p class="muted">
+            Quick matches between two players are rated with Elo. Results come from the server’s own simulation, so there is
+            nothing for a client to submit or fake. To stop rating farming, a match is unrated when both players are on the same
+            network or the same browser, when it is abandoned in the first 10 seconds, when the loser never moved, or after 3
+            rated games against the same opponent in a day. Bot and private-room matches are always unrated.
+          </p>
+        </details>
+        <p id="persist" class="muted small" hidden>This server has no database, so ratings reset when it restarts.</p>
       </section>
 
       <section id="game" hidden>
@@ -42,6 +69,7 @@
           <canvas id="field" width="800" height="500" aria-label="Game field"></canvas>
           <div id="overlay" class="overlay" aria-live="polite"></div>
         </div>
+        <p id="result" class="small" aria-live="polite"></p>
         <div class="row">
           <button id="rematch" hidden>Rematch</button>
           <button id="leave" class="secondary">Leave</button>

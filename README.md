@@ -6,7 +6,7 @@ A real-time two-player game over WebSockets, built from scratch to show the netc
 
 **Live demo:** https://rally-6flz.onrender.com (free instance: the first visit after idling takes about a minute). Play the built-in bot, quick-match a stranger, or share a private room code.
 
-**Stack:** TypeScript · Node.js · `ws` (no game framework) · Canvas · Vite · Vitest · Prometheus · Docker · GitHub Actions
+**Stack:** TypeScript · Node.js · `ws` (no game framework) · Canvas · Vite · PostgreSQL · Vitest · Prometheus · Docker · GitHub Actions
 
 ```mermaid
 sequenceDiagram
@@ -32,6 +32,31 @@ sequenceDiagram
 | **Abuse** | A token bucket per connection (90 msg/s, burst 120). Malformed or rate-limited messages are strikes, and 50 strikes close with 1008. Oversized frames close with 1009. There is a connection cap. |
 | **Observability** | `/metrics` (Prometheus) reports connections, rooms, queue length, messages by type, rejections, skipped snapshots, tick-time histogram, finished matches by reason, and reconnects. `/healthz` and `/api/stats` are also available. |
 | **Determinism** | The physics is a pure step function with a seeded xorshift RNG: the same seed and inputs replay identically, which the tests check. The paddle collision is a swept test, so a ball at top speed (15 units per tick) can't tunnel through. |
+
+## Leaderboard
+
+Quick matches between two players are rated with Elo ([`server/src/leaderboard`](server/src/leaderboard)).
+
+**Nothing to fake.** Most leaderboard cheating means submitting a made-up score. Here there is no submit endpoint: the result comes from the server's own simulation the moment a match ends. A player is identified by a random 256-bit key kept in their browser, and the server stores only its SHA-256 hash.
+
+**What's left to stop is farming:** matches that really happened but shouldn't count. These rules are pure functions in [`rules.ts`](server/src/leaderboard/rules.ts), and the reason for an unrated match is shown to the players and kept in the database:
+
+| Abuse | Rule |
+|---|---|
+| Playing yourself in two tabs | The same player on both sides is unrated |
+| A second account on the same machine or Wi-Fi | Both players on the same network (hashed client IP) is unrated |
+| Gifting wins: join, then leave at once | Matches abandoned in the first 10 s are unrated. A later leave or failure to reconnect still counts as a loss, so quitting a losing match doesn't protect your rating |
+| Beating an idle account | Unrated if the loser moved for less than half a second |
+| Farming one opponent | At most 3 rated games per pair in 24 hours |
+| Arranged results | Private-room and bot matches are always unrated |
+
+**Exactly once.** Each match has an id (room plus match number). Recording inserts it with `ON CONFLICT DO NOTHING` and updates both ratings in the same transaction, so a retry after a timeout can't count a match twice. Recording runs off the game loop and retries with backoff. If the database is unavailable, a match goes unrecorded rather than stalling the 60 Hz tick.
+
+**Concurrency.** Two matches between the same players can finish at the same moment. Both transactions lock the two player rows in id order, so they queue up instead of deadlocking, and the second one sees the first one's rating and pair count. With the locks removed, the concurrent test rates too many games (checked by mutation).
+
+**Client IP.** The same-network rule needs an IP a client can't forge. Render appends to `X-Forwarded-For` rather than replacing it, so the first entry is whatever the client sent. The server therefore reads only the header named in `CLIENT_IP_HEADER`: Cloudflare's `cf-connecting-ip`, which Cloudflare sets itself. Without that setting, it uses the socket address.
+
+Without `DATABASE_URL`, ratings are kept in memory and reset on restart, and the page says so. The store tests run against both the in-memory store and Postgres.
 
 ## Bugs the testing found
 
@@ -59,7 +84,8 @@ The first local run reported 14 ms ticks. Profiling showed the simulation at 0.1
 ```bash
 npm install
 npm run dev            # server on :8080 (tsx watch) and client on :5192 (Vite, proxying /ws)
-npm test               # 35 tests: physics, protocol, prediction, and the server over real WebSockets
+npm test               # 67 tests: physics, protocol, prediction, the server over real WebSockets, and the leaderboard
+RALLY_TEST_DATABASE_URL=postgresql://… npm test   # also runs the leaderboard store tests against Postgres
 npm run build && npm start
 npm run loadtest -- http://localhost:8080 200 30
 ```
@@ -71,6 +97,7 @@ The server tests cover:
 - room cleanup
 - malformed messages and messages before `hello`
 - flooding (1008), oversized frames (1009), and heartbeat timeouts
+- rated and unrated matches end to end, which client IP headers are trusted, and the leaderboard API
 
 ## Scaling out
 
@@ -89,6 +116,7 @@ server/src/room.ts        match: input queues, fixed tick, pause/resume/forfeit,
 server/src/lobby.ts       sessions and tokens, quick match, private rooms, bot games
 server/src/server.ts      HTTP + WebSocket server, rate limits, heartbeat, backpressure, metrics
 server/src/bot.ts         beatable AI that plays through the normal input path
+server/src/leaderboard/   rating rules (pure), Postgres and in-memory stores, idempotent recording with retries
 client/src/               lobby, Canvas renderer, netcode panel (latency, prediction toggle, drop)
 scripts/                  load test, prediction probe, tick benchmark
 ```

@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url';
+import { rulesFromEnv, type Rules } from './leaderboard';
 
 export interface Config {
   port: number;
@@ -19,6 +20,15 @@ export interface Config {
   /** Snapshots are skipped for a client whose socket has more than this many bytes queued. */
   maxBufferedBytes: number;
   publicDir: string;
+  /** Postgres for the leaderboard; without it ratings live in memory until restart */
+  databaseUrl: string | undefined;
+  /**
+   * Header holding the client IP, set by a trusted proxy (on Render, Cloudflare's cf-connecting-ip).
+   * Unset: the socket address. X-Forwarded-For isn't used by default because a proxy that appends to
+   * it passes through whatever the client sent first.
+   */
+  clientIpHeader: string | undefined;
+  rules: Rules;
 }
 
 const int = (v: string | undefined, def: number) => (v ? Number.parseInt(v, 10) : def);
@@ -36,5 +46,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     inputQueueMax: int(env.INPUT_QUEUE_MAX, 8),
     maxBufferedBytes: int(env.MAX_BUFFERED_BYTES, 64 * 1024),
     publicDir: env.PUBLIC_DIR ?? fileURLToPath(new URL('../../client/dist', import.meta.url)),
+    databaseUrl: env.DATABASE_URL || undefined,
+    clientIpHeader: env.CLIENT_IP_HEADER?.toLowerCase() || undefined,
+    rules: rulesFromEnv(env),
   };
 }

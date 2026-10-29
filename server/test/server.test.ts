@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 import type { ServerMessage } from '@rally/shared';
@@ -14,8 +15,8 @@ class Client {
   closed: { code: number } | null = null;
   seq = 0;
 
-  constructor(url: string) {
-    this.ws = new WebSocket(url);
+  constructor(url: string, headers: Record<string, string> = {}) {
+    this.ws = new WebSocket(url, { headers });
     this.ws.on('message', (d) => {
       const m = JSON.parse(d.toString()) as Msg;
       this.inbox.push(m);
@@ -48,8 +49,8 @@ class Client {
     });
   }
 
-  async hello(name: string, token?: string) {
-    this.send({ t: 'hello', v: 1, name, ...(token ? { token } : {}) });
+  async hello(name: string, token?: string, key?: string) {
+    this.send({ t: 'hello', v: 1, name, ...(token ? { token } : {}), ...(key ? { key } : {}) });
     return this.next('welcome');
   }
 
@@ -66,13 +67,15 @@ let server: ReturnType<typeof startServer>;
 let url: string;
 const clients: Client[] = [];
 
-async function connect(name?: string) {
-  const c = new Client(url);
+async function connect(name?: string, opts: { key?: string; ip?: string } = {}) {
+  const c = new Client(url, opts.ip ? { 'x-client-ip': opts.ip } : {});
   clients.push(c);
   await c.open();
-  if (name) await c.hello(name);
+  if (name) await c.hello(name, undefined, opts.key);
   return c;
 }
+
+const newKey = () => randomBytes(32).toString('base64url');
 
 async function start(overrides: Partial<Config> = {}) {
   server = startServer({ ...loadConfig({}), reconnectGraceMs: 600, heartbeatMs: 60_000, publicDir: '/nonexistent', ...overrides });
@@ -263,5 +266,87 @@ describe('abuse', () => {
     const c = await connect('Ghost');
     c.ws.pong = () => {}; // the client stops answering pings, like a half-open TCP connection
     expect(await c.closedWith()).toBe(1006);
+  });
+});
+
+describe('leaderboard', () => {
+  // Shorter thresholds so a test match can end by leaving instead of playing to 5
+  const quick = { minDurationMs: 0, minMoves: 0, pairDailyLimit: 3, initialRating: 1200, kFactor: 32, minGamesListed: 1 };
+
+  async function rankedPair(ipA: string, ipB: string, keys = [newKey(), newKey()]) {
+    const a = await connect('Alice', { key: keys[0], ip: ipA });
+    const b = await connect('Bob', { key: keys[1], ip: ipB });
+    a.send({ t: 'queue' });
+    await a.next('waiting');
+    b.send({ t: 'queue' });
+    await Promise.all([a.next('matched'), b.next('matched')]);
+    return { a, b, keys };
+  }
+
+  it('rates a quick match from the server’s own result and lists the players', async () => {
+    await server.close();
+    await start({ clientIpHeader: 'x-client-ip', rules: quick });
+    const { a, b, keys } = await rankedPair('203.0.113.1', '198.51.100.7');
+    expect(await a.next('profile')).toMatchObject({ rating: 1200, games: 0, rank: null });
+
+    b.send({ t: 'leave' }); // Bob concedes: Alice wins
+    expect(await a.next('over')).toMatchObject({ winner: 0, reason: 'left' });
+    expect(await a.next('rated')).toMatchObject({ rated: true, delta: 16, rating: 1216 });
+    expect(await b.next('rated')).toMatchObject({ rated: true, delta: -16, rating: 1184 });
+    expect(await a.next('profile', (m) => m.games === 1)).toMatchObject({ rating: 1216, wins: 1, rank: 1 });
+
+    const res = await fetch(url.replace('ws://', 'http://').replace('/ws', '/api/leaderboard'));
+    const body = await res.json();
+    expect(body.persistent).toBe(false);
+    expect(body.players).toEqual([
+      { name: 'Alice', rating: 1216, games: 1, wins: 1, losses: 0, rank: 1 },
+      { name: 'Bob', rating: 1184, games: 1, wins: 0, losses: 1, rank: 2 },
+    ]);
+    expect(body.recent).toEqual([expect.objectContaining({ names: ['Alice', 'Bob'], rated: true, deltas: [16, -16], mode: 'ranked' })]);
+    expect(JSON.stringify(body)).not.toContain(keys[0]); // neither keys nor ids are exposed
+  });
+
+  it('does not rate two players on the same network, a private room, or a guest', async () => {
+    await server.close();
+    await start({ clientIpHeader: 'x-client-ip', rules: quick });
+
+    const same = await rankedPair('203.0.113.1', '203.0.113.1');
+    same.b.send({ t: 'leave' });
+    expect(await same.a.next('rated')).toMatchObject({ rated: false, delta: 0, reason: expect.stringMatching(/same network/) });
+
+    const host = await connect('Host', { key: newKey(), ip: '203.0.113.9' });
+    const guest = await connect('Guest', { key: newKey(), ip: '198.51.100.9' });
+    host.send({ t: 'create' });
+    const { code } = await host.next('waiting');
+    guest.send({ t: 'join', code });
+    await host.next('matched');
+    guest.send({ t: 'leave' });
+    expect(await host.next('rated')).toMatchObject({ rated: false, reason: expect.stringMatching(/Private/) });
+
+    const keyed = await connect('Keyed', { key: newKey(), ip: '203.0.113.20' });
+    const anon = await connect('Anon', { ip: '198.51.100.20' });
+    keyed.send({ t: 'queue' });
+    await keyed.next('waiting');
+    anon.send({ t: 'queue' });
+    await keyed.next('matched');
+    anon.send({ t: 'leave' });
+    expect(await keyed.next('rated')).toMatchObject({ rated: false, reason: expect.stringMatching(/Guests/) });
+  });
+
+  it('uses the default rules: a match abandoned at once is unrated, so nobody can gift wins', async () => {
+    await server.close();
+    await start({ clientIpHeader: 'x-client-ip' });
+    const { a, b } = await rankedPair('203.0.113.1', '198.51.100.7');
+    b.send({ t: 'leave' });
+    expect(await a.next('rated')).toMatchObject({ rated: false, reason: expect.stringMatching(/within 10 s/) });
+  });
+
+  it('ignores client IP headers unless told which one a trusted proxy sets', async () => {
+    // Default config: both test clients really come from 127.0.0.1, whatever header they send
+    await server.close();
+    await start({ rules: quick });
+    const { a, b } = await rankedPair('203.0.113.1', '198.51.100.7');
+    b.send({ t: 'leave' });
+    expect(await a.next('rated')).toMatchObject({ rated: false, reason: expect.stringMatching(/same network/) });
   });
 });

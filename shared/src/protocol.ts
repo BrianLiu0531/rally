@@ -10,7 +10,8 @@ export const SNAPSHOT_EVERY_TICKS = 3; // 60 Hz simulation, 20 Hz snapshots
 // ---- client → server ----
 
 export type ClientMessage =
-  | { t: 'hello'; v: number; name: string; token?: string } // token resumes an earlier session
+  // token resumes an earlier session; key is a secret kept in the browser that identifies the player for ratings
+  | { t: 'hello'; v: number; name: string; token?: string; key?: string }
   | { t: 'queue' } // quick match
   | { t: 'create' } // private room; the server replies with a code
   | { t: 'join'; code: string }
@@ -24,6 +25,7 @@ export type ClientMessage =
 const NAME = /^[\p{L}\p{N} _.-]{1,16}$/u;
 const CODE = /^[A-Z2-9]{4}$/;
 const TOKEN = /^[A-Za-z0-9_-]{22,64}$/;
+const KEY = /^[A-Za-z0-9_-]{43}$/; // 32 random bytes, base64url
 
 /** Parses and validates a raw frame. Returns null for anything malformed. */
 export function parseClientMessage(raw: string): ClientMessage | null {
@@ -40,7 +42,14 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     case 'hello':
       if (o.v !== PROTOCOL_VERSION || typeof o.name !== 'string') return null;
       if (o.token !== undefined && (typeof o.token !== 'string' || !TOKEN.test(o.token))) return null;
-      return { t: 'hello', v: PROTOCOL_VERSION, name: cleanName(o.name), ...(o.token ? { token: o.token as string } : {}) };
+      if (o.key !== undefined && (typeof o.key !== 'string' || !KEY.test(o.key))) return null;
+      return {
+        t: 'hello',
+        v: PROTOCOL_VERSION,
+        name: cleanName(o.name),
+        ...(o.token ? { token: o.token as string } : {}),
+        ...(o.key ? { key: o.key as string } : {}),
+      };
     case 'input':
       if (!Number.isSafeInteger(o.seq) || (o.seq as number) < 0) return null;
       if (o.dir !== -1 && o.dir !== 0 && o.dir !== 1) return null;
@@ -89,6 +98,10 @@ export type ServerMessage =
   | { t: 'paused'; who: 0 | 1; graceMs: number } // a player dropped; the match waits for them
   | { t: 'resumed' }
   | { t: 'over'; winner: 0 | 1; reason: 'score' | 'forfeit' | 'left' }
+  /** Your rating and rank, after hello and after each rated match */
+  | { t: 'profile'; rating: number; games: number; wins: number; losses: number; rank: number | null }
+  /** How the finished match affected your rating: a change, or why it didn't count */
+  | { t: 'rated'; rated: boolean; delta: number; rating: number | null; reason?: string }
   | { t: 'rematch'; ready: [boolean, boolean] }
   | { t: 'pong'; c: number; s: number } // s = server clock
   | { t: 'error'; code: 'bad_message' | 'rate_limited' | 'no_such_room' | 'room_full' | 'not_in_room' | 'hello_first' | 'server_full' };

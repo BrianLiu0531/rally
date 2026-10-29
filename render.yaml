@@ -7,3 +7,11 @@ services:
     plan: free
     region: singapore
     healthCheckPath: /healthz
+    envVars:
+      # Render sits behind Cloudflare, which sets this header itself (a client can't forge it the way it can
+      # the first X-Forwarded-For entry). Used to spot one person rating themselves with two accounts.
+      - key: CLIENT_IP_HEADER
+        value: cf-connecting-ip
+      # Postgres for the leaderboard (e.g. a free Neon database); without it ratings reset on restart
+      - key: DATABASE_URL
+        sync: false

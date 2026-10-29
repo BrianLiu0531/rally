@@ -106,6 +106,47 @@ async function refreshStats() {
 refreshStats();
 setInterval(refreshStats, 10_000);
 
+// ---- Leaderboard ----
+
+interface Board {
+  persistent: boolean;
+  players: { name: string; rating: number; games: number; wins: number; losses: number; rank: number }[];
+  recent: { names: [string, string]; score: [number, number]; winner: 0 | 1; ended: 'score' | 'forfeit' | 'left'; mode: string; rated: boolean; reason: string | null; deltas: [number, number] }[];
+}
+
+const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+async function refreshBoard() {
+  if (lobby.hidden) return;
+  let board: Board;
+  try {
+    board = await (await fetch('/api/leaderboard')).json();
+  } catch {
+    return;
+  }
+  $('ranks').innerHTML = board.players.length
+    ? board.players
+        .slice(0, 10)
+        .map((p) => `<tr><td>${p.rank}</td><td>${esc(p.name)}</td><td class="num">${p.rating}</td><td class="num muted">${p.wins}–${p.losses}</td></tr>`)
+        .join('')
+    : '<tr><td colspan="4" class="muted">No rated matches yet. Quick-match someone on another device or network.</td></tr>';
+  $('recent').innerHTML = board.recent.length
+    ? board.recent
+        .map((m) => {
+          const players = `${m.winner === 0 ? '<strong>' + esc(m.names[0]) + '</strong>' : esc(m.names[0])} ${m.score[0]}–${m.score[1]} ${m.winner === 1 ? '<strong>' + esc(m.names[1]) + '</strong>' : esc(m.names[1])}`;
+          const verdict = m.rated
+            ? `<span class="rated">rated ${m.deltas[m.winner] > 0 ? '+' : ''}${m.deltas[m.winner]}</span>`
+            : `<span class="muted">unrated: ${esc((m.reason ?? '').replace(/^\w/, (c) => c.toLowerCase()))}</span>`;
+          const how = m.ended === 'left' ? ' <span class="muted">(left)</span>' : m.ended === 'forfeit' ? ' <span class="muted">(forfeit)</span>' : '';
+          return `<li>${players}${how}<br />${verdict}</li>`;
+        })
+        .join('')
+    : '<li class="muted">No matches yet.</li>';
+  $('persist').hidden = board.persistent;
+}
+refreshBoard();
+setInterval(refreshBoard, 10_000);
+
 // ---- Messages ----
 
 function onMessage(m: ServerMessage) {
@@ -137,6 +178,7 @@ function onMessage(m: ServerMessage) {
       lobby.hidden = true;
       game.hidden = false;
       $('rematch').hidden = true;
+      $('result').textContent = '';
       overlay.textContent = '';
       break;
     case 'state': {
@@ -161,6 +203,15 @@ function onMessage(m: ServerMessage) {
     case 'resumed':
       banner = '';
       flash('Resumed');
+      break;
+    case 'profile':
+      $('me').textContent = `Your rating ${m.rating}${m.rank ? ` · #${m.rank}` : ''} · ${m.wins}–${m.losses}`;
+      break;
+    case 'rated':
+      $('result').textContent = m.rated
+        ? `Rating ${m.delta > 0 ? '+' : ''}${m.delta} → ${m.rating}`
+        : `Unrated: ${m.reason?.replace(/^\w/, (c) => c.toLowerCase()) ?? 'not counted'}`;
+      $('result').className = m.rated ? (m.delta > 0 ? 'rated' : 'warn') : 'muted';
       break;
     case 'over': {
       const won = m.winner === side;
@@ -189,6 +240,7 @@ $('leave').onclick = () => {
   net?.send({ t: 'leave' });
   game.hidden = true;
   lobby.hidden = false;
+  void refreshBoard();
   phase = 'waiting';
 };
 $('drop').onclick = () => net?.dropConnection();

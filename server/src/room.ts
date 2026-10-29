@@ -29,6 +29,8 @@ interface Seat {
   droppedAt: number | null;
   left: boolean;
   rematch: boolean;
+  /** Ticks this match in which the player moved, to tell a real opponent from an idle one */
+  moves: number;
 }
 
 export type EndReason = 'score' | 'forfeit' | 'left';
@@ -38,6 +40,7 @@ export interface RoomOptions {
   inputQueueMax: number;
   seed: number;
   onEnd?: (room: Room, reason: EndReason) => void;
+  now?: () => number;
 }
 
 const RESUME_DELAY_MS = 1000;
@@ -50,6 +53,9 @@ export class Room {
   private resumeAt: number | null = null;
   private pausedFrom: Phase = 'countdown';
   private seed: number;
+  /** Increments on every rematch; with the room id it identifies one match */
+  matchNo = 1;
+  startedAt: number;
 
   constructor(
     readonly id: string,
@@ -59,11 +65,16 @@ export class Room {
   ) {
     this.seed = opts.seed;
     this.state = newGame(this.seed);
+    this.startedAt = this.clock();
     const seat = (p: Participant | null, bot: Bot | null, name: string): Seat => ({
-      player: p, bot, name, inputs: [], lastSeq: 0, ack: 0, droppedAt: null, left: false, rematch: bot !== null,
+      player: p, bot, name, inputs: [], lastSeq: 0, ack: 0, droppedAt: null, left: false, rematch: bot !== null, moves: 0,
     });
     this.seats = [seat(a, null, a.name), b === 'bot' ? seat(null, new Bot(1, opts.seed), 'Rally Bot') : seat(b, null, b.name)];
     this.announce();
+  }
+
+  private clock(): number {
+    return this.opts.now?.() ?? Date.now();
   }
 
   get hasBot(): boolean {
@@ -132,6 +143,7 @@ export class Room {
       for (const extra of batch.slice(0, -1)) st.paddles[side] = movePaddle(st.paddles[side], extra.dir);
       const last = batch[batch.length - 1]!;
       seat.ack = last.seq;
+      if (batch.some((b) => b.dir !== 0)) seat.moves++;
       return last.dir;
     }) as [Dir, Dir];
 
@@ -207,9 +219,12 @@ export class Room {
     this.broadcast({ t: 'rematch', ready: [this.seats[0].rematch, this.seats[1].rematch] });
     if (this.seats[0].rematch && this.seats[1].rematch) {
       this.state = newGame(++this.seed);
+      this.matchNo++;
+      this.startedAt = this.clock();
       for (const s of this.seats) {
         s.rematch = s.bot !== null;
         s.inputs = [];
+        s.moves = 0;
       }
       this.announce();
     }

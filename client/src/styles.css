@@ -7,6 +7,7 @@
   --line: #e0e4ea;
   --accent: #7c3aed;
   --warn: #b45309;
+  --good: #15803d;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -19,6 +20,7 @@
     --line: #26303d;
     --accent: #a78bfa;
     --warn: #fbbf24;
+    --good: #4ade80;
     color-scheme: dark;
   }
 }
@@ -52,4 +54,16 @@ canvas { display: block; width: 100%; height: auto; aspect-ratio: 8 / 5; backgro
 .netpanel { margin-top: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; }
 .netpanel summary { cursor: pointer; font-weight: 600; }
 footer { margin-top: 28px; text-align: center; }
+#board { margin-top: 16px; }
+h2 { margin: 0 0 8px; font-size: 1.05rem; }
+.board { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+@media (max-width: 640px) { .board { grid-template-columns: 1fr; } }
+table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+th, td { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--line); }
+th { color: var(--muted); font-weight: 600; font-size: 0.8rem; }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+.recent { list-style: none; margin: 0; padding: 0; font-size: 0.88rem; display: grid; gap: 8px; }
+.rated { color: var(--good); font-weight: 600; }
+#result { min-height: 1.4em; margin: 8px 0 0; font-weight: 600; }
+details summary { cursor: pointer; }
 [hidden] { display: none !important; }

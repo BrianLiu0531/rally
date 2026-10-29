@@ -7,6 +7,21 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: rally_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-retries 10
+    env:
+      # The leaderboard store tests run against both the in-memory store and this database
+      RALLY_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/rally_test
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -19,7 +34,7 @@ jobs:
       - run: npm run build
       - name: Load test smoke run (200 clients, 15 s; fails on any error or dropped connection)
         run: |
-          node server/dist/server.js &
+          DATABASE_URL=$RALLY_TEST_DATABASE_URL node server/dist/server.js &
           for i in $(seq 1 30); do curl -sf localhost:8080/healthz >/dev/null && break; sleep 0.5; done
           npm run loadtest -- http://localhost:8080 200 15
 

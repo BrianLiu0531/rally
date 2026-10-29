@@ -4,6 +4,7 @@ import { extname, join, normalize, resolve } from 'node:path';
 import { MAX_MESSAGE_BYTES, TICK_RATE, parseClientMessage, type ServerMessage } from '@rally/shared';
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { Config } from './config';
+import { Leaderboard } from './leaderboard';
 import { Lobby, type Connection, type Session } from './lobby';
 import { createMetrics } from './metrics';
 import { TokenBucket } from './ratelimit';
@@ -26,6 +27,7 @@ class SocketConnection implements Connection {
 
   constructor(
     readonly ws: WebSocket,
+    readonly ip: string,
     private readonly config: Config,
     private readonly metrics: ReturnType<typeof createMetrics>,
     rate: number,
@@ -48,7 +50,8 @@ class SocketConnection implements Connection {
 
 export function startServer(config: Config) {
   const metrics = createMetrics();
-  const lobby = new Lobby(config, metrics);
+  const leaderboard = Leaderboard.create(config.databaseUrl, config.rules, metrics);
+  const lobby = new Lobby(config, metrics, leaderboard);
   const publicDir = resolve(config.publicDir);
 
   const http = createServer(async (req: IncomingMessage, res: ServerResponse) => {
@@ -57,6 +60,17 @@ export function startServer(config: Config) {
     if (url.pathname === '/metrics') {
       res.writeHead(200, { 'content-type': metrics.registry.contentType });
       return res.end(await metrics.registry.metrics());
+    }
+    if (url.pathname === '/api/leaderboard') {
+      try {
+        const board = await leaderboard.board();
+        return res
+          .writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+          .end(JSON.stringify({ persistent: leaderboard.store.persistent, ...board }));
+      } catch (err) {
+        console.error(JSON.stringify({ msg: 'leaderboard query failed', error: (err as Error).message }));
+        return res.writeHead(503, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'leaderboard unavailable' }));
+      }
     }
     if (url.pathname === '/api/stats') {
       return res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(lobby.stats));
@@ -67,9 +81,11 @@ export function startServer(config: Config) {
   const wss = new WebSocketServer({ server: http, path: '/ws', maxPayload: MAX_MESSAGE_BYTES, perMessageDeflate: false });
   const connections = new WeakMap<WebSocket, SocketConnection>();
 
-  wss.on('connection', (ws) => {
+  wss.on('connection', (ws, req) => {
     if (wss.clients.size > config.maxConnections) return ws.close(1013, 'server full');
-    const conn = new SocketConnection(ws, config, metrics, config.messageRate, config.messageBurst);
+    const header = config.clientIpHeader ? req.headers[config.clientIpHeader] : undefined;
+    const ip = (Array.isArray(header) ? header[0] : header)?.trim() || req.socket.remoteAddress || 'unknown';
+    const conn = new SocketConnection(ws, ip, config, metrics, config.messageRate, config.messageBurst);
     connections.set(ws, conn);
     metrics.connections.set(wss.clients.size);
 
@@ -131,8 +147,10 @@ export function startServer(config: Config) {
     http,
     wss,
     lobby,
+    leaderboard,
     metrics,
-    listen(port = config.port): Promise<number> {
+    async listen(port = config.port): Promise<number> {
+      await leaderboard.store.init();
       return new Promise((ok) => http.listen(port, () => ok((http.address() as { port: number }).port)));
     },
     async close() {
@@ -142,6 +160,7 @@ export function startServer(config: Config) {
       for (const ws of wss.clients) ws.close(1001, 'server shutting down');
       await new Promise<void>((ok) => wss.close(() => ok()));
       await new Promise<void>((ok) => http.close(() => ok()));
+      await leaderboard.store.close();
     },
   };
 }

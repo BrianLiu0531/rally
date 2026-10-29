@@ -1,6 +1,25 @@
 import { PROTOCOL_VERSION, type ClientMessage, type ServerMessage } from '@rally/shared';
 
 const TOKEN_KEY = 'rally:token';
+const PLAYER_KEY = 'rally:key';
+
+/**
+ * A random secret kept in this browser that identifies the player for ratings. The server only
+ * stores its hash. Without localStorage the player is a guest and their matches are unrated.
+ */
+function playerKey(): string | undefined {
+  try {
+    let key = localStorage.getItem(PLAYER_KEY);
+    if (!key || !/^[A-Za-z0-9_-]{43}$/.test(key)) {
+      const bytes = crypto.getRandomValues(new Uint8Array(32));
+      key = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      localStorage.setItem(PLAYER_KEY, key);
+    }
+    return key;
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * WebSocket with automatic reconnection (resuming the session by token), RTT measurement and an
@@ -42,7 +61,8 @@ export class Net {
     ws.onopen = () => {
       this.attempts = 0;
       this.onStatus('open');
-      this.sendNow({ t: 'hello', v: PROTOCOL_VERSION, name: this.name, ...(this.token ? { token: this.token } : {}) });
+      const key = playerKey();
+      this.sendNow({ t: 'hello', v: PROTOCOL_VERSION, name: this.name, ...(this.token ? { token: this.token } : {}), ...(key ? { key } : {}) });
       clearInterval(this.pingTimer);
       this.pingTimer = window.setInterval(() => this.send({ t: 'ping', c: performance.now() }), 1000);
     };

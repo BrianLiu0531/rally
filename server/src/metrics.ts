@@ -19,6 +19,12 @@ export function createMetrics() {
       registers: [registry],
     }),
     matchesEnded: new client.Counter({ name: 'rally_matches_ended_total', help: 'Finished matches', labelNames: ['reason'], registers: [registry] }),
+    recordedMatches: new client.Counter({
+      name: 'rally_recorded_matches_total',
+      help: 'Leaderboard recording outcomes (rated, unrated, duplicate, failed)',
+      labelNames: ['result'],
+      registers: [registry],
+    }),
     reconnects: new client.Counter({ name: 'rally_reconnects_total', help: 'Sessions resumed with a token', registers: [registry] }),
   };
   return m;
