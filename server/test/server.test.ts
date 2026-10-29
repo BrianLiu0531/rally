@@ -295,6 +295,7 @@ describe('leaderboard', () => {
     expect(await b.next('rated')).toMatchObject({ rated: true, delta: -16, rating: 1184 });
     expect(await a.next('profile', (m) => m.games === 1)).toMatchObject({ rating: 1216, wins: 1, rank: 1 });
 
+    expect(await server.metrics.clientIpSource.get()).toMatchObject({ values: [expect.objectContaining({ labels: { source: 'header' }, value: 2 })] });
     const res = await fetch(url.replace('ws://', 'http://').replace('/ws', '/api/leaderboard'));
     const body = await res.json();
     expect(body.persistent).toBe(false);

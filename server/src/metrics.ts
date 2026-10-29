@@ -25,6 +25,12 @@ export function createMetrics() {
       labelNames: ['result'],
       registers: [registry],
     }),
+    clientIpSource: new client.Counter({
+      name: 'rally_client_ip_source_total',
+      help: 'Where the client IP of each connection came from: the trusted proxy header, or the socket (header unset or missing)',
+      labelNames: ['source'],
+      registers: [registry],
+    }),
     reconnects: new client.Counter({ name: 'rally_reconnects_total', help: 'Sessions resumed with a token', registers: [registry] }),
   };
   return m;

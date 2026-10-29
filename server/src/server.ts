@@ -84,7 +84,10 @@ export function startServer(config: Config) {
   wss.on('connection', (ws, req) => {
     if (wss.clients.size > config.maxConnections) return ws.close(1013, 'server full');
     const header = config.clientIpHeader ? req.headers[config.clientIpHeader] : undefined;
-    const ip = (Array.isArray(header) ? header[0] : header)?.trim() || req.socket.remoteAddress || 'unknown';
+    const fromHeader = (Array.isArray(header) ? header[0] : header)?.trim();
+    // A configured header that is missing means the proxy setup changed: every player would share the proxy's address
+    metrics.clientIpSource.inc({ source: fromHeader ? 'header' : config.clientIpHeader ? 'header_missing' : 'socket' });
+    const ip = fromHeader || req.socket.remoteAddress || 'unknown';
     const conn = new SocketConnection(ws, ip, config, metrics, config.messageRate, config.messageBurst);
     connections.set(ws, conn);
     metrics.connections.set(wss.clients.size);
